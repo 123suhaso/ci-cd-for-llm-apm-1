@@ -49,7 +49,7 @@ jobs:
 
   code-quality-backend:
     name: Backend — Python Syntax Check
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: backend
@@ -67,7 +67,7 @@ jobs:
 
   gitleaks-pr-scan:
     name: Gitleaks PR scan (safe)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.event_name == 'pull_request_target'
     steps:
       - name: Checkout PR head (safe for pull_request_target)
@@ -92,7 +92,7 @@ jobs:
 
   security-checks:
     name: Security Checks (Bandit, Safety, ESLint, Gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [code-quality-frontend, code-quality-backend]
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +146,7 @@ jobs:
 
   backend-tests:
     name: Backend — Run pytest (with coverage, coverage gating disabled)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: [code-quality-backend]
     defaults:
       run:
