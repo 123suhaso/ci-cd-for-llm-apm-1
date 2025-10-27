@@ -32,7 +32,6 @@ backend:
     periodSeconds: 20
     timeoutSeconds: 3
 
-  # HPA config for backend (horizontal scaling)
   hpa:
     enabled: true
     minReplicas: 1
