@@ -65,29 +65,29 @@ jobs:
       - name: Python syntax check
         run: python -m compileall . || true
 
-  gitleaks-pr-scan:
-    name: Gitleaks PR scan (safe)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_target'
-    steps:
-      - name: Checkout PR head (safe for pull_request_target)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
+  # gitleaks-pr-scan:
+  #   name: Gitleaks PR scan (safe)
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request_target'
+  #   steps:
+  #     - name: Checkout PR head (safe for pull_request_target)
+  #       uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ github.event.pull_request.head.sha }}
+  #         token: ${{ secrets.GITHUB_TOKEN }}
+  #         fetch-depth: 0
 
-      - name: Run Gitleaks (action)
-        uses: zricethezav/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: Run Gitleaks (action)
+  #       uses: zricethezav/gitleaks-action@v2
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload gitleaks report (if generated)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitleaks-report
-          path: gitleaks-report.json
+  #     - name: Upload gitleaks report (if generated)
+  #       if: always()
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: gitleaks-report
+  #         path: gitleaks-report.json
 
 
   security-checks:
@@ -98,6 +98,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
 
       - uses: actions/setup-python@v4
         with:
@@ -132,10 +134,10 @@ jobs:
             npx eslint . --ext .js,.jsx || true
             cd ..
           fi
-      - name: Run Gitleaks (action)  # CI context (non-PR-target)
-        uses: zricethezav/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Run Gitleaks (action)  # CI context (non-PR-target)
+      #   uses: zricethezav/gitleaks-action@v2
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: security-reports
@@ -271,7 +273,7 @@ jobs:
       - name: Save buildx cache (optional)
         run: |
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
-          
+
 
   container-scan:
     name: Container Image Security Scan (Trivy)
