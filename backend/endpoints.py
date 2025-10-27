@@ -42,7 +42,7 @@ from router.auth import get_current_user
 
 from llm_apm.core.decorators import get_current_step_metrics, step
 from llm_apm.exporters.prometheus import PrometheusExporter, get_global_exporter
-from llm_apm.storage.postgresql_async import AsyncPostgreSQLStorage
+# from llm_apm.storage.postgresql_async import AsyncPostgreSQLStorage
 from llm_apm.utils.cache import get_key as cache_get_key
 from llm_apm.utils.cache import make_key as cache_make_key
 from llm_apm.utils.cache import set_key as cache_set_key

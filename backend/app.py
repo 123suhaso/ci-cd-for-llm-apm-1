@@ -12,7 +12,7 @@ from router.auth import router as auth_router
 from llm_apm import LLMMonitor
 from llm_apm.exporters.prometheus import PrometheusExporter, set_global_exporter
 from llm_apm.middleware.fastapi import LLMAPMMiddleware, add_monitoring_endpoints
-from llm_apm.storage.postgresql_async import AsyncPostgreSQLStorage
+# from llm_apm.storage.postgresql_async import AsyncPostgreSQLStorage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")

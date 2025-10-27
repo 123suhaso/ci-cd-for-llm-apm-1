@@ -12,19 +12,19 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 
-from llm_apm.storage.postgresql_async import AsyncPostgreSQLStorage
+# from llm_apm.storage.postgresql_async import AsyncPostgreSQLStorage
 
-storage = AsyncPostgreSQLStorage()
-
-
-async def get_connection():
-    await storage.init_pool()
-    return await storage._pool.acquire()
+# storage = AsyncPostgreSQLStorage()
 
 
-async def release_connection(conn):
-    if storage._pool:
-        await storage._pool.release(conn)
+# async def get_connection():
+#     await storage.init_pool()
+#     return await storage._pool.acquire()
+
+
+# async def release_connection(conn):
+#     if storage._pool:
+#         await storage._pool.release(conn)
 
 
 router = APIRouter(tags=["auth"])
