@@ -101,7 +101,7 @@ redis:
       cpu: "500m"
       memory: "512Mi"
 
-# Service types
+
 service:
   backend:
     type: ClusterIP
