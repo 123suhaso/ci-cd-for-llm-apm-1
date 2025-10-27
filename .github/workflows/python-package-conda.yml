@@ -473,7 +473,7 @@ jobs:
             --set imageTag=${{ env.IMAGE_TAG }} \
             --atomic \
             --wait \
-            --timeout=6m \
+            # --timeout=6m \
             --cleanup-on-fail \
             2>&1 | tee helm-deploy.log
           
@@ -737,7 +737,7 @@ jobs:
               sleep 10
             fi
           done
-          
+
 
           # Test frontend accessibility
           echo ""
