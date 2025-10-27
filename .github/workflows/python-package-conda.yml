@@ -7,19 +7,22 @@ concurrency:
 permissions:
   contents: read
   pull-requests: read
-
+  packages: write  # Required for GHCR
 
 on:
   push:
     branches:
       - main
+
 env:
   IMAGE_TAG: ${{ github.sha }}
   KEYVAULT_NAME: kv-scopebot
   DEPLOYMENT_TIMEOUT: 600s
-  HEALTH_CHECK_RETRIES: 30
-  SMOKE_TEST_RETRIES: 10
+  HEALTH_CHECK_RETRIES: 10
+  SMOKE_TEST_RETRIES: 5
   SERVICE_WAIT_TIMEOUT: 300
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/llm-apm
 
 jobs:
   code-quality-frontend:
@@ -33,6 +36,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then
@@ -58,6 +63,8 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.11
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
       - name: Install dependencies (non-fatal)
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -65,33 +72,8 @@ jobs:
       - name: Python syntax check
         run: python -m compileall . || true
 
-  # gitleaks-pr-scan:
-  #   name: Gitleaks PR scan (safe)
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name == 'pull_request_target'
-  #   steps:
-  #     - name: Checkout PR head (safe for pull_request_target)
-  #       uses: actions/checkout@v4
-  #       with:
-  #         ref: ${{ github.event.pull_request.head.sha }}
-  #         token: ${{ secrets.GITHUB_TOKEN }}
-  #         fetch-depth: 0
-
-  #     - name: Run Gitleaks (action)
-  #       uses: zricethezav/gitleaks-action@v2
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  #     - name: Upload gitleaks report (if generated)
-  #       if: always()
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: gitleaks-report
-  #         path: gitleaks-report.json
-
-
   security-checks:
-    name: Security Checks (Bandit, Safety, ESLint, Gitleaks)
+    name: Security Checks (Bandit, Safety, ESLint)
     runs-on: ubuntu-latest
     needs: [code-quality-frontend, code-quality-backend]
     steps:
@@ -104,6 +86,8 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: 3.11
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
       - name: Install Python deps + tools
         run: |
           cd backend || exit 0
@@ -126,6 +110,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
       - name: Run ESLint
         run: |
           if [ -d frontend ]; then
@@ -134,20 +120,15 @@ jobs:
             npx eslint . --ext .js,.jsx || true
             cd ..
           fi
-      # - name: Run Gitleaks (action)  # CI context (non-PR-target)
-      #   uses: zricethezav/gitleaks-action@v2
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: security-reports
           path: |
             bandit-report.json
             safety-report.json
-            gitleaks-report.json
 
   backend-tests:
-    name: Backend — Run pytest (with coverage, coverage gating disabled)
+    name: Backend — Run pytest (with coverage)
     runs-on: ubuntu-latest
     needs: [code-quality-backend]
     defaults:
@@ -166,15 +147,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-
-      - name: Cache pip (runner-level cache)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: 'pip'
+          cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies (including pytest-cov)
         run: |
@@ -184,39 +158,26 @@ jobs:
           fi
           pip install pytest pytest-asyncio httpx pytest-cov || true
 
-      - name: Run pytest + coverage (produce JUnit xml + coverage xml)
+      - name: Run pytest + coverage
         id: pytest
         run: |
-          echo "PWD: $(pwd)"
           pytest -q --maxfail=1 \
             --junitxml=backend-tests.xml \
             --cov=. \
             --cov-report=term \
             --cov-report=xml:coverage.xml \
             --cov-fail-under=0 || pytest_exit=$?
-          echo "Looking for coverage.xml and backend-tests.xml..."
-          find . -maxdepth 2 -type f -name "coverage.xml" -print || true
-          find . -maxdepth 2 -type f -name "backend-tests.xml" -print || true
           if [ -n "${pytest_exit:-}" ]; then
             echo "pytest failed with code ${pytest_exit}"
             exit ${pytest_exit}
           fi
 
       - name: Upload pytest JUnit report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-pytest-report
           path: backend/backend-tests.xml
-
-      - name: Upload test logs (full pytest -vv)
-        if: always()
-        run: |
-          pytest -q -vv > pytest-full.log || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-pytest-log
-          path: backend/pytest-full.log
 
       - name: Upload coverage xml
         if: always()
@@ -232,28 +193,41 @@ jobs:
     strategy:
       matrix:
         service: [backend, frontend]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub (before creating buildx builder)
+      # Login to GHCR for storing your images
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Login to Docker Hub for pulling base images (node, nginx, python, etc.)
+      - name: Log in to Docker Hub (for base images)
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PAT }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
-      - name: Pre-pull previous cache images (best-effort)
-        run: |
-          echo "Attempting to pull buildcache and latest for ${SERVICE:=${{ matrix.service }}}"
-          docker pull ${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:buildcache || true
-          docker pull ${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:latest || true
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=sha,prefix=,format=long
+            type=raw,value=latest
 
-      - name: Build & Push Docker image (with registry cache)
+      - name: Build & Push Docker image to GHCR
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.service }}
@@ -261,19 +235,15 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:${{ env.IMAGE_TAG }}
-            ${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ env.IMAGE_TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
           cache-from: |
-            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:buildcache
-            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:latest
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:buildcache
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
           cache-to: |
-            type=registry,ref=${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:buildcache,mode=max
-            type=local,dest=/tmp/.buildx-cache-new,mode=max
-          # ensure builder uses credentials (login already happened above)
-          # optional: enable buildkit pull behavior
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:buildcache,mode=max
           pull: true
-
-
+          labels: ${{ steps.meta.outputs.labels }}
 
   container-scan:
     name: Container Image Security Scan (Trivy)
@@ -282,31 +252,39 @@ jobs:
     strategy:
       matrix:
         service: [backend, frontend]
+      fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/login-action@v2
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PAT }}
-      - name: Install Trivy (official script)
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
           trivy --version
 
       - name: Scan Docker image with Trivy
         run: |
-          IMAGE="${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:${{ env.IMAGE_TAG }}"
-          trivy image --format table --severity HIGH,CRITICAL --ignore-unfixed --timeout 5m "${IMAGE}" || true
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ env.IMAGE_TAG }}"
+          trivy image \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --timeout 5m \
+            "${IMAGE}" || true
 
   deploy:
     name: Deploy to AKS with Auto-Rollback
-    # if: >
-    #   github.event_name == 'pull_request_target' &&
-    #   github.event.action == 'closed' &&
-    #   github.event.pull_request.merged == true &&
-    #   (github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
     needs: container-scan
+    environment:
+      name: production
+      url: https://your-app-url.com
 
     steps:
       - uses: actions/checkout@v4
@@ -332,7 +310,7 @@ jobs:
             --name ${{ secrets.AKS_CLUSTER }} \
             --overwrite-existing
 
-      - name: Ensure metrics-server is installed (if missing)
+      - name: Ensure metrics-server is installed
         run: |
           if ! kubectl get deployment metrics-server -n kube-system >/dev/null 2>&1; then
             echo "Installing metrics-server..."
@@ -340,50 +318,6 @@ jobs:
             kubectl rollout status deployment/metrics-server -n kube-system --timeout=120s || true
           else
             echo "metrics-server already present"
-          fi
-
-      - name: Ensure Vertical Pod Autoscaler controller is installed (if missing)
-        shell: bash
-        run: |
-          if kubectl get deployment -n kube-system -l app.kubernetes.io/name=vertical-pod-autoscaler >/dev/null 2>&1 || kubectl get deployment vpa-admission-controller -n kube-system >/dev/null 2>&1; then
-            echo "VPA controller already present"
-            kubectl get pods -n kube-system -l 'app.kubernetes.io/name=vertical-pod-autoscaler' || kubectl get pods -n kube-system | grep vpa || true
-            exit 0
-          fi
-
-          echo "VPA controller not found — installing from kubernetes/autoscaler repo"
-          REPO_TAG="master"
-
-          git clone https://github.com/kubernetes/autoscaler.git /tmp/autoscaler || { echo "git clone failed"; exit 1; }
-          pushd /tmp/autoscaler >/dev/null
-          git fetch --all --tags || true
-          git checkout "${REPO_TAG}" || true
-
-          if [ -x vertical-pod-autoscaler/hack/vpa-up.sh ]; then
-            echo "Running vpa-up.sh to install VPA..."
-            (cd vertical-pod-autoscaler && ./hack/vpa-up.sh) || { echo "VPA install script returned non-zero"; exit 1; }
-          else
-            echo "vpa-up.sh not found or not executable; falling back to raw manifests"
-            kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/master/vertical-pod-autoscaler/deploy/recommender.yaml || true
-            kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/master/vertical-pod-autoscaler/deploy/admission-controller.yaml || true
-            kubectl apply -f https://raw.githubusercontent.com/kubernetes/autoscaler/master/vertical-pod-autoscaler/deploy/updater.yaml || true
-          fi
-          popd >/dev/null
-
-          echo "Waiting for VPA pods to become Ready (timeout ~5m)..."
-          for i in {1..30}; do
-            if kubectl get pods -n kube-system | grep -q -E 'vpa-|vertical-pod-autoscaler|vpa-admission-controller'; then
-              echo "VPA pods detected:"
-              kubectl get pods -n kube-system | grep -E 'vpa-|vertical-pod-autoscaler|vpa-admission-controller' || true
-              break
-            fi
-            sleep 10
-          done
-
-          if ! kubectl get deployment -n kube-system -l app.kubernetes.io/name=vertical-pod-autoscaler >/dev/null 2>&1 && ! kubectl get deployment vpa-admission-controller -n kube-system >/dev/null 2>&1; then
-            echo "WARNING: VPA controller not detected after install attempts. You may need to ask infra to install it (cluster-admin required)."
-            kubectl get pods -n kube-system || true
-            exit 1
           fi
 
       - name: Ensure Managed Identity has Key Vault access
@@ -404,30 +338,19 @@ jobs:
           kubectl create namespace llm-apm --dry-run=client -o yaml | kubectl apply -f -
           kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
 
-      # - name: Install CSI Secrets Store Driver
-      #   run: |
-      #     helm repo add csi-secrets-store-provider-azure https://azure.github.io/secrets-store-csi-driver-provider-azure/charts
-      #     helm repo update
-      #     helm upgrade --install csi-secrets-store-provider-azure csi-secrets-store-provider-azure/csi-secrets-store-provider-azure \
-      #       --namespace kube-system \
-      #       --set rbac.create=false \
-      #       --set secrets-store-csi-driver.syncSecret.enabled=true \
-      #       --set secrets-store-csi-driver.enableSecretRotation=true \
-      #       --wait --timeout=5m
-
-
-      - name: Create Docker Hub secret
+      - name: Create GHCR pull secret
         run: |
-          kubectl create secret docker-registry dockerhub-secret \
-            --docker-username=${{ secrets.DOCKER_USERNAME }} \
-            --docker-password=${{ secrets.DOCKER_PAT }} \
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=ghcr.io \
+            --docker-username=${{ github.actor }} \
+            --docker-password=${{ secrets.GITHUB_TOKEN }} \
             --docker-email=${{ secrets.ADMIN_EMAIL }} \
             -n llm-apm --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Patch default service account
         run: |
           kubectl -n llm-apm patch serviceaccount default \
-            --type='merge' -p '{"imagePullSecrets":[{"name":"dockerhub-secret"}]}' || true
+            --type='merge' -p '{"imagePullSecrets":[{"name":"ghcr-secret"}]}' || true
 
       # ============================================================
       # CAPTURE CURRENT STATE BEFORE DEPLOYMENT
@@ -437,14 +360,12 @@ jobs:
         run: |
           echo "📸 Capturing current deployment state..."
           
-          # Check if deployment exists
           if helm list -n llm-apm | grep -q llm-apm; then
             CURRENT_REVISION=$(helm list -n llm-apm -o json | jq -r '.[] | select(.name=="llm-apm") | .revision')
             echo "current_revision=$CURRENT_REVISION" >> $GITHUB_OUTPUT
             echo "deployment_exists=true" >> $GITHUB_OUTPUT
             echo "✅ Found existing deployment at revision $CURRENT_REVISION"
             
-            # Save current deployment info
             helm get values llm-apm -n llm-apm > current-values.yaml || true
             kubectl get pods -n llm-apm -o wide > current-pods.txt || true
             
@@ -463,38 +384,35 @@ jobs:
         run: |
           echo "Starting deployment of version ${{ env.IMAGE_TAG }}..."
           
-          set +e  # Don't exit on error, we'll handle it
+          set +e
           
           helm upgrade --install llm-apm ./llm-apm-chart \
             --namespace llm-apm \
             --create-namespace \
+            --set imageRegistry=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
+            --set imageTag=${{ env.IMAGE_TAG }} \
             --set backend.vpa.enabled=false \
             --set secretsProvider.tenantId=${{ steps.get-azure-info.outputs.tenantId }} \
-            --set imageTag=${{ env.IMAGE_TAG }} \
             --atomic \
             --wait \
-            # --timeout=6m \
+            --timeout=10m \
             --cleanup-on-fail \
             2>&1 | tee helm-deploy.log
           
           HELM_EXIT_CODE=${PIPESTATUS[0]}
           
           if [ $HELM_EXIT_CODE -ne 0 ]; then
-            echo "Helm deployment failed with exit code $HELM_EXIT_CODE"
+            echo "❌ Helm deployment failed with exit code $HELM_EXIT_CODE"
             echo "deployment_status=failed" >> $GITHUB_OUTPUT
-            
-            # Show what went wrong
-            echo "Deployment logs:"
             cat helm-deploy.log
-            
             exit 1
           else
-            echo "Helm deployment succeeded"
+            echo "✅ Helm deployment succeeded"
             echo "deployment_status=success" >> $GITHUB_OUTPUT
           fi
 
       # ============================================================
-      # VERIFY SERVICES EXIST AFTER DEPLOYMENT (updated for -service names)
+      # VERIFY SERVICES EXIST AFTER DEPLOYMENT
       # ============================================================
       - name: Verify services are created
         id: verify-services
@@ -506,7 +424,6 @@ jobs:
           MAX_WAIT=${{ env.SERVICE_WAIT_TIMEOUT }}
           INTERVAL=10
           
-          # Use the actual service names present in cluster
           REQUIRED_SERVICES=("backend-service" "frontend-service" "redis-service")
           
           for service in "${REQUIRED_SERVICES[@]}"; do
@@ -515,16 +432,15 @@ jobs:
             while [ $elapsed -lt $MAX_WAIT ]; do
               if kubectl get svc "$service" -n llm-apm >/dev/null 2>&1; then
                 echo "✅ Service $service exists"
-                # verify endpoints have at least one address
                 EP=$(kubectl get endpoints "$service" -n llm-apm -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
                 if [ -n "$EP" ]; then
                   echo "✅ Service $service has endpoints: $EP"
                   break
                 else
-                  echo "⏳ Service $service exists but has no endpoints yet (waiting)... ($elapsed/${MAX_WAIT})"
+                  echo "⏳ Service $service exists but has no endpoints yet ($elapsed/${MAX_WAIT}s)"
                 fi
               else
-                echo "⏳ Service $service not found yet. Waiting... ($elapsed/${MAX_WAIT})"
+                echo "⏳ Service $service not found yet ($elapsed/${MAX_WAIT}s)"
               fi
               sleep $INTERVAL
               elapsed=$((elapsed + INTERVAL))
@@ -538,19 +454,12 @@ jobs:
           
           if [ "$SERVICE_CHECK_FAILED" = true ]; then
             echo "service_status=failed" >> $GITHUB_OUTPUT
-            echo ""
-            echo "📋 Current services in namespace:"
             kubectl get svc -n llm-apm -o wide || true
-            echo ""
-            echo "📋 Current pods in namespace:"
             kubectl get pods -n llm-apm -o wide || true
             exit 1
           else
-            echo "✅ All required services are created and have endpoints"
+            echo "✅ All required services are created"
             echo "service_status=success" >> $GITHUB_OUTPUT
-            echo ""
-            echo "📋 Service details:"
-            kubectl get svc -n llm-apm -o wide || true
           fi
 
       # ============================================================
@@ -564,18 +473,12 @@ jobs:
           
           set +e
           
-          # Wait for backend
-          echo "Waiting for backend deployment..."
           kubectl rollout status deployment/backend -n llm-apm --timeout=${{ env.DEPLOYMENT_TIMEOUT }}
           BACKEND_STATUS=$?
           
-          # Wait for frontend
-          echo "Waiting for frontend deployment..."
           kubectl rollout status deployment/frontend -n llm-apm --timeout=${{ env.DEPLOYMENT_TIMEOUT }}
           FRONTEND_STATUS=$?
           
-          # Wait for redis
-          echo "Waiting for redis deployment..."
           kubectl rollout status deployment/redis -n llm-apm --timeout=300s
           REDIS_STATUS=$?
           
@@ -595,28 +498,22 @@ jobs:
         id: health-checks
         if: steps.wait-rollouts.outputs.rollout_status == 'success'
         run: |
-          echo "🏥 Performing comprehensive health checks..."
+          echo "🏥 Performing health checks..."
           
           HEALTH_CHECK_FAILED=false
           
-          # Check if all pods are running and ready
-          echo "Checking pod status..."
           kubectl get pods -n llm-apm
           
-          # Wait for pods to be ready
-          echo "Waiting for backend pods to be ready..."
           if ! kubectl wait --for=condition=ready pod -l app=backend -n llm-apm --timeout=300s; then
             echo "❌ Backend pods not ready"
             HEALTH_CHECK_FAILED=true
           fi
           
-          echo "Waiting for frontend pods to be ready..."
           if ! kubectl wait --for=condition=ready pod -l app=frontend -n llm-apm --timeout=300s; then
             echo "❌ Frontend pods not ready"
             HEALTH_CHECK_FAILED=true
           fi
           
-          # Check for CrashLoopBackOff or Error states
           UNHEALTHY_PODS=$(kubectl get pods -n llm-apm --field-selector=status.phase!=Running,status.phase!=Succeeded -o json | jq -r '.items | length')
           
           if [ "$UNHEALTHY_PODS" -gt 0 ]; then
@@ -625,12 +522,11 @@ jobs:
             HEALTH_CHECK_FAILED=true
           fi
           
-          # Check container restart counts
           RESTART_COUNT=$(kubectl get pods -n llm-apm -o json | jq '[.items[].status.containerStatuses[]?.restartCount // 0] | add')
           echo "Total container restarts: $RESTART_COUNT"
           
           if [ "$RESTART_COUNT" -gt 5 ]; then
-            echo "⚠️  Warning: High restart count detected ($RESTART_COUNT restarts)"
+            echo "⚠️  High restart count: $RESTART_COUNT"
             HEALTH_CHECK_FAILED=true
           fi
           
@@ -643,7 +539,7 @@ jobs:
           fi
 
       # ============================================================
-      # SMOKE TESTS WITH PROPER SERVICE AVAILABILITY CHECKS (uses -service names and service ports)
+      # SMOKE TESTS
       # ============================================================
       - name: Run smoke tests
         id: smoke-tests
@@ -653,132 +549,86 @@ jobs:
           set +e
           SMOKE_TEST_FAILED=false
 
-          # The services in your cluster are named with -service suffix
-          BACKEND_SVC_NAME="backend-service"
-          FRONTEND_SVC_NAME="frontend-service"
-          REDIS_SVC_NAME="redis-service"
+          BACKEND_SVC="backend-service"
+          FRONTEND_SVC="frontend-service"
           NAMESPACE="llm-apm"
 
-          # quick existence check
-          for s in "${BACKEND_SVC_NAME}" "${FRONTEND_SVC_NAME}" "${REDIS_SVC_NAME}"; do
-            if ! kubectl get svc "$s" -n $NAMESPACE >/dev/null 2>&1; then
-              echo "❌ Service $s not found in $NAMESPACE!"
-              kubectl get svc -n $NAMESPACE || true
-              SMOKE_TEST_FAILED=true
-              echo "smoke_test_status=failed" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          done
+          # Get service details
+          BACKEND_IP=$(kubectl get svc "$BACKEND_SVC" -n $NAMESPACE -o jsonpath='{.spec.clusterIP}')
+          BACKEND_PORT=$(kubectl get svc "$BACKEND_SVC" -n $NAMESPACE -o jsonpath='{.spec.ports[0].port}')
+          FRONTEND_IP=$(kubectl get svc "$FRONTEND_SVC" -n $NAMESPACE -o jsonpath='{.spec.clusterIP}')
+          FRONTEND_PORT=$(kubectl get svc "$FRONTEND_SVC" -n $NAMESPACE -o jsonpath='{.spec.ports[0].port}')
 
-          # Get ClusterIP and service port (use service port, not targetPort)
-          BACKEND_CLUSTER_IP=$(kubectl get svc "$BACKEND_SVC_NAME" -n $NAMESPACE -o jsonpath='{.spec.clusterIP}')
-          BACKEND_PORT=$(kubectl get svc "$BACKEND_SVC_NAME" -n $NAMESPACE -o jsonpath='{.spec.ports[0].port}')
-          FRONTEND_CLUSTER_IP=$(kubectl get svc "$FRONTEND_SVC_NAME" -n $NAMESPACE -o jsonpath='{.spec.clusterIP}')
-          FRONTEND_PORT=$(kubectl get svc "$FRONTEND_SVC_NAME" -n $NAMESPACE -o jsonpath='{.spec.ports[0].port}')
-
-          if [ -z "$BACKEND_CLUSTER_IP" ] || [ -z "$FRONTEND_CLUSTER_IP" ]; then
+          if [ -z "$BACKEND_IP" ] || [ -z "$FRONTEND_IP" ]; then
             echo "❌ Failed to get service IPs"
-            echo "Backend SVC: ${BACKEND_CLUSTER_IP:-NOT FOUND}"
-            echo "Frontend SVC: ${FRONTEND_CLUSTER_IP:-NOT FOUND}"
             kubectl get svc -n $NAMESPACE -o wide
-            SMOKE_TEST_FAILED=true
             echo "smoke_test_status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
 
-          echo "✅ Backend Service IP: $BACKEND_CLUSTER_IP:$BACKEND_PORT"
-          echo "✅ Frontend Service IP: $FRONTEND_CLUSTER_IP:$FRONTEND_PORT"
+          echo "✅ Backend: $BACKEND_IP:$BACKEND_PORT"
+          echo "✅ Frontend: $FRONTEND_IP:$FRONTEND_PORT"
 
-          # Verify services have endpoints
-          BACKEND_ENDPOINTS=$(kubectl get endpoints "$BACKEND_SVC_NAME" -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
-          FRONTEND_ENDPOINTS=$(kubectl get endpoints "$FRONTEND_SVC_NAME" -n $NAMESPACE -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
+          # Create single smoke test pod
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: smoke-test-pod
+            namespace: default
+          spec:
+            restartPolicy: Never
+            containers:
+            - name: curl
+              image: curlimages/curl:latest
+              command: ["/bin/sh"]
+              args:
+                - -c
+                - |
+                  echo "Testing backend health..."
+                  for i in \$(seq 1 ${{ env.SMOKE_TEST_RETRIES }}); do
+                    if curl -f -s "http://${BACKEND_IP}:${BACKEND_PORT}/health" --max-time 10; then
+                      echo "✅ Backend health OK"
+                      break
+                    fi
+                    if [ \$i -eq ${{ env.SMOKE_TEST_RETRIES }} ]; then
+                      echo "❌ Backend health failed"
+                      exit 1
+                    fi
+                    sleep 10
+                  done
+                  
+                  echo "Testing frontend..."
+                  for i in \$(seq 1 ${{ env.SMOKE_TEST_RETRIES }}); do
+                    if curl -f -s "http://${FRONTEND_IP}:${FRONTEND_PORT}" --max-time 10; then
+                      echo "✅ Frontend OK"
+                      exit 0
+                    fi
+                    if [ \$i -eq ${{ env.SMOKE_TEST_RETRIES }} ]; then
+                      echo "❌ Frontend failed"
+                      exit 1
+                    fi
+                    sleep 10
+                  done
+          EOF
 
-          if [ -z "$BACKEND_ENDPOINTS" ]; then
-            echo "❌ Backend service has no endpoints"
-            kubectl describe endpoints "$BACKEND_SVC_NAME" -n $NAMESPACE || true
-            SMOKE_TEST_FAILED=true
-          else
-            echo "✅ Backend endpoints: $BACKEND_ENDPOINTS"
-          fi
-
-          if [ -z "$FRONTEND_ENDPOINTS" ]; then
-            echo "❌ Frontend service has no endpoints"
-            kubectl describe endpoints "$FRONTEND_SVC_NAME" -n $NAMESPACE || true
-            SMOKE_TEST_FAILED=true
-          else
-            echo "✅ Frontend endpoints: $FRONTEND_ENDPOINTS"
-          fi
+          # Wait for test completion
+          kubectl wait --for=condition=complete --timeout=300s pod/smoke-test-pod -n default || SMOKE_TEST_FAILED=true
+          
+          # Show logs
+          echo ""
+          echo "📋 Smoke test logs:"
+          kubectl logs smoke-test-pod -n default || true
+          
+          # Cleanup
+          kubectl delete pod smoke-test-pod -n default --ignore-not-found=true
 
           if [ "$SMOKE_TEST_FAILED" = true ]; then
             echo "smoke_test_status=failed" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-
-          # Test backend health endpoint using a test pod
-          echo ""
-          echo "Testing backend health endpoint..."
-          for i in $(seq 1 ${{ env.SMOKE_TEST_RETRIES }}); do
-            echo "Attempt $i/${{ env.SMOKE_TEST_RETRIES }}..."
-            POD_NAME="smoke-test-backend-$(date +%s)-$RANDOM"
-            if kubectl run "$POD_NAME" --rm -i --restart=Never --image=curlimages/curl:latest \
-              --command -- curl -f -s "http://${BACKEND_CLUSTER_IP}:${BACKEND_PORT}/health" --max-time 10 2>&1 | tee backend-health.log; then
-              echo "✅ Backend health check passed (attempt $i)"
-              break
-            fi
-
-            if [ $i -eq ${{ env.SMOKE_TEST_RETRIES }} ]; then
-              echo "❌ Backend health check failed after ${{ env.SMOKE_TEST_RETRIES }} attempts"
-              echo "Last response:"
-              cat backend-health.log || echo "No response captured"
-              SMOKE_TEST_FAILED=true
-            else
-              echo "⏳ Attempt $i failed, retrying in 10s..."
-              kubectl delete pod "$POD_NAME" -n default --ignore-not-found=true 2>/dev/null || true
-              sleep 10
-            fi
-          done
-
-
-          # Test frontend accessibility
-          echo ""
-          echo "Testing frontend accessibility..."
-          for i in $(seq 1 ${{ env.SMOKE_TEST_RETRIES }}); do
-            echo "Attempt $i/${{ env.SMOKE_TEST_RETRIES }}..."
-            POD_NAME="smoke-test-frontend-$(date +%s)-$RANDOM"
-            if kubectl run "$POD_NAME" --rm -i --restart=Never --image=curlimages/curl:latest \
-              --command -- curl -f -s "http://${FRONTEND_CLUSTER_IP}:${FRONTEND_PORT}" --max-time 10 2>&1 | tee frontend-health.log; then
-              echo "✅ Frontend accessibility check passed (attempt $i)"
-              break
-            fi
-
-            if [ $i -eq ${{ env.SMOKE_TEST_RETRIES }} ]; then
-              echo "❌ Frontend accessibility check failed after ${{ env.SMOKE_TEST_RETRIES }} attempts"
-              echo "Last response:"
-              cat frontend-health.log || echo "No response captured"
-              SMOKE_TEST_FAILED=true
-            else
-              echo "⏳ Attempt $i failed, retrying in 10s..."
-              kubectl delete pod "$POD_NAME" -n default --ignore-not-found=true 2>/dev/null || true
-              sleep 10
-            fi
-          done
-
-          if [ "$SMOKE_TEST_FAILED" = true ]; then
-            echo ""
-            echo "📋 Debugging information:"
-            echo "Services:"
             kubectl get svc -n $NAMESPACE -o wide || true
-            echo ""
-            echo "Endpoints:"
-            kubectl get endpoints -n $NAMESPACE || true
-            echo ""
-            echo "Pods:"
             kubectl get pods -n $NAMESPACE -o wide || true
-            echo ""
-            echo "smoke_test_status=failed" >> $GITHUB_OUTPUT
             exit 1
           else
-            echo ""
             echo "✅ All smoke tests passed"
             echo "smoke_test_status=success" >> $GITHUB_OUTPUT
           fi
@@ -799,13 +649,12 @@ jobs:
           echo "🔄 AUTOMATIC ROLLBACK INITIATED"
           echo "================================"
           
-          # Determine what failed
           if [ "${{ steps.helm-deploy.outcome }}" = "failure" ]; then
             echo "Reason: Helm deployment failed"
           elif [ "${{ steps.verify-services.outcome }}" = "failure" ]; then
-            echo "Reason: Service verification failed - services were not created"
+            echo "Reason: Service verification failed"
           elif [ "${{ steps.wait-rollouts.outcome }}" = "failure" ]; then
-            echo "Reason: Rollout timeout or failure"
+            echo "Reason: Rollout timeout"
           elif [ "${{ steps.health-checks.outcome }}" = "failure" ]; then
             echo "Reason: Health checks failed"
           elif [ "${{ steps.smoke-tests.outcome }}" = "failure" ]; then
@@ -815,40 +664,24 @@ jobs:
           echo ""
           echo "Rolling back to revision ${{ steps.capture-state.outputs.current_revision }}..."
           
-          # Perform rollback
           helm rollback llm-apm ${{ steps.capture-state.outputs.current_revision }} -n llm-apm --wait --timeout=5m
           
-          echo ""
-          echo "⏳ Waiting for rollback to complete..."
-          
-          # Wait for rollback to complete
+          echo "⏳ Waiting for rollback..."
           kubectl rollout status deployment/backend -n llm-apm --timeout=300s || true
           kubectl rollout status deployment/frontend -n llm-apm --timeout=300s || true
           kubectl rollout status deployment/redis -n llm-apm --timeout=300s || true
           
-          # Give services time to stabilize
-          echo "Waiting for services to stabilize..."
           sleep 15
           
-          echo ""
-          echo "✅ Rollback completed successfully"
-          echo ""
-          echo "📊 Current deployment status:"
+          echo "✅ Rollback completed"
           kubectl get pods -n llm-apm -o wide
-          echo ""
-          echo "📊 Service status:"
-          kubectl get svc -n llm-apm -o wide
-          echo ""
-          echo "📜 Helm history:"
           helm history llm-apm -n llm-apm
           
-          # Mark deployment as failed (this will fail the job)
-          echo ""
           echo "❌ DEPLOYMENT FAILED - Rolled back to previous version"
           exit 1
 
       # ============================================================
-      # INGRESS CONTROLLER SETUP (runs only on success)
+      # INGRESS CONTROLLER SETUP
       # ============================================================
       - name: Deploy NGINX Ingress Controller
         if: success()
@@ -868,19 +701,12 @@ jobs:
           for i in {1..60}; do
             IP=$(kubectl get svc -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             if [ -n "$IP" ]; then
-              echo "NGINX Ingress IP: $IP"
+              echo "✅ NGINX Ingress IP: $IP"
               echo "NGINX_INGRESS_IP=$IP" >> $GITHUB_ENV
               break
             fi
             sleep 10
           done
-
-      - name: Verify CSI-synced secrets
-        if: success()
-        run: |
-          kubectl get secrets -n llm-apm || true
-          kubectl get secret llm-apm-secret -n llm-apm -o yaml || echo "Backend secret not synced"
-          kubectl get secret frontend-env-secret -n llm-apm -o yaml || echo "Frontend secret not synced"
 
       # ============================================================
       # SAVE DEPLOYMENT ARTIFACTS
@@ -890,10 +716,11 @@ jobs:
         run: |
           mkdir -p deployment-artifacts
           
-          helm history llm-apm -n llm-apm > deployment-artifacts/helm-history.txt 2>&1 || echo "No helm history" > deployment-artifacts/helm-history.txt
+          helm history llm-apm -n llm-apm > deployment-artifacts/helm-history.txt 2>&1 || true
           
           cat > deployment-artifacts/deployment-info.txt <<EOF
           IMAGE_TAG=${{ env.IMAGE_TAG }}
+          REGISTRY=${{ env.REGISTRY }}
           GIT_SHA=${{ github.sha }}
           GIT_REF=${{ github.ref }}
           DEPLOYMENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -904,8 +731,6 @@ jobs:
           kubectl get pods -n llm-apm -o wide > deployment-artifacts/pod-status.txt 2>&1 || true
           kubectl get events -n llm-apm --sort-by='.lastTimestamp' > deployment-artifacts/events.txt 2>&1 || true
           helm get values llm-apm -n llm-apm > deployment-artifacts/deployed-values.yaml 2>&1 || true
-          
-          echo "📦 Deployment artifacts saved"
 
       - name: Upload deployment artifacts
         if: always()
@@ -924,46 +749,20 @@ jobs:
           echo "======================================"
           echo "🔍 DEBUGGING INFORMATION"
           echo "======================================"
-          echo ""
           
           echo "=== Pod Status ==="
           kubectl get pods -n llm-apm -o wide || true
-          echo ""
           
-          echo "=== Recent Events (last 50) ==="
+          echo "=== Recent Events ==="
           kubectl get events -n llm-apm --sort-by='.lastTimestamp' | tail -50 || true
-          echo ""
           
-          echo "=== Backend Pod Logs ==="
+          echo "=== Backend Logs ==="
           kubectl logs -n llm-apm -l app=backend --tail=200 --all-containers=true || true
-          echo ""
           
-          echo "=== Frontend Pod Logs ==="
+          echo "=== Frontend Logs ==="
           kubectl logs -n llm-apm -l app=frontend --tail=200 --all-containers=true || true
-          echo ""
           
-          echo "=== Redis Pod Logs ==="
-          kubectl logs -n llm-apm -l app=redis --tail=100 --all-containers=true || true
-          echo ""
-          
-          echo "=== CSI Driver Logs ==="
-          kubectl logs -n kube-system -l app.kubernetes.io/name=secrets-store-csi-driver --tail=200 || true
-          echo ""
-          
-          echo "=== Describe Failed Pods ==="
+          echo "=== Failed Pod Details ==="
           for pod in $(kubectl get pods -n llm-apm --field-selector=status.phase!=Running -o name 2>/dev/null); do
-            echo "--- $pod ---"
             kubectl describe -n llm-apm $pod || true
-            echo ""
           done
-          
-          echo "=== Helm Release Status ==="
-          helm status llm-apm -n llm-apm || true
-          echo ""
-          
-          echo "=== Deployment Status ==="
-          kubectl get deployments -n llm-apm -o wide || true
-          echo ""
-          
-          echo "=== ReplicaSets ==="
-          kubectl get rs -n llm-apm || true
