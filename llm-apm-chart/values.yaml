@@ -126,7 +126,7 @@ ingress:
 # Cert-manager ClusterIssuer settings (used by template)
 clusterIssuer:
   email: suhaso2002@gmail.com
-  name: letsencrypt-prod-1
+  name: letsencrypt-prod
   server: https://acme-v02.api.letsencrypt.org/directory
 
 secretsProvider:
