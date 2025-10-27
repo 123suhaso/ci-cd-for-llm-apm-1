@@ -185,7 +185,6 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage.xml
-          
 
   build:
     name: Build & Push Docker Images
@@ -236,39 +235,29 @@ jobs:
         run: |
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
 
+
   container-scan:
     name: Container Image Security Scan (Trivy)
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: build
     strategy:
       matrix:
         service: [backend, frontend]
-      fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v2
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Install Trivy
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PAT }}
+      - name: Install Trivy (official script)
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
           trivy --version
 
       - name: Scan Docker image with Trivy
         run: |
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ env.IMAGE_TAG }}"
-          trivy image \
-            --format table \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --timeout 5m \
-            "${IMAGE}" || true
-
+          IMAGE="${{ secrets.DOCKER_USERNAME }}/llm-apm-${{ matrix.service }}:${{ env.IMAGE_TAG }}"
+          trivy image --format table --severity HIGH,CRITICAL --ignore-unfixed --timeout 5m "${IMAGE}" || true
 
   deploy:
     name: Deploy to AKS with Auto-Rollback
