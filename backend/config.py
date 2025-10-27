@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     METRICS_JWT_SECRET: Optional[str] = Field(None, env="METRICS_JWT_SECRET")
     METRICS_JWT_AUD: str = Field("llm-apm", env="METRICS_JWT_AUD")
 
-    # DATABASE_URL: Optional[str] = Field(None, env="DATABASE_URL")
+    DATABASE_URL: Optional[str] = Field(None, env="DATABASE_URL_1")
 
     PORT: int = Field(8000, env="PORT")
     RELOAD: bool = Field(True, env="RELOAD")
