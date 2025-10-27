@@ -134,6 +134,7 @@ jobs:
             npx eslint . --ext .js,.jsx || true
             cd ..
           fi
+          
       # - name: Run Gitleaks (action)  # CI context (non-PR-target)
       #   uses: zricethezav/gitleaks-action@v2
       #   env:
