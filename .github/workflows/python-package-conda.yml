@@ -278,6 +278,7 @@ jobs:
             --timeout 5m \
             "${IMAGE}" || true
 
+            
   deploy:
     name: Deploy to AKS with Auto-Rollback
     runs-on: ubuntu-latest
