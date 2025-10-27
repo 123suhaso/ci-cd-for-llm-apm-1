@@ -1,0 +1,13 @@
+# templates/pdb-frontend.yaml - CREATE THIS
+{{- if .Values.frontend.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.frontend.name }}-pdb
+  namespace: {{ .Values.namespace }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.frontend.name }}
+{{- end }}

@@ -1,0 +1,3 @@
+/* index.css - imports split files so you only need to import this once */
+@import './auth.css';
+@import './chat.css';

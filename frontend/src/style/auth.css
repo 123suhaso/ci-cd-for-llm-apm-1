@@ -1,0 +1,365 @@
+:root {
+  --brand: #4a4bd6;
+  --brand-2: #6c4df0;
+  --bg: #f6f7fb;
+  --muted: #9aa3b2;
+  --muted-2: #71767d;
+  --text: #111827;
+  --white: #ffffff;
+  --field-border: #e6e9ef;
+  --card-shadow: 0 10px 30px rgba(20, 20, 20, 0.06);
+  --radius: 12px;
+  --focus-ring: 0 6px 18px rgba(74, 75, 214, 0.12);
+  --transition-fast: 0.12s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: Inter, 'Segoe UI', Roboto, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.35;
+  font-size: 16px;
+}
+
+.auth-outer {
+  display: flex;
+  min-height: 100vh;
+  width: 100%;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.left-illustration {
+  flex: 0 0 45%;
+  min-width: 320px;
+  background: linear-gradient(180deg, #1e55d9 0%, #2749c9 100%);
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  position: relative;
+  text-align: center;
+}
+
+.illustration-wrapper {
+  width: 100%;
+  max-width: 520px;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  position: relative;
+}
+
+.illustration-wrapper img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  background: transparent;
+  filter: drop-shadow(0 8px 24px rgba(10, 20, 80, 0.08));
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.illustration-text {
+  position: absolute;
+  top: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.illustration-text h1 {
+  font-size: 44px;
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.illustration-text p {
+  margin-top: 10px;
+  font-size: 18px;
+  opacity: 0.95;
+}
+
+.right-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--white);
+  padding: 48px;
+}
+
+.card {
+  width: 420px;
+  max-width: calc(100% - 48px);
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 36px;
+  transition: transform var(--transition-fast);
+}
+
+.card h2 {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.card p {
+  margin: 0 0 18px 0;
+  color: var(--muted-2);
+  font-size: 14px;
+}
+
+.field {
+  position: relative;
+  margin-bottom: 14px;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  display: block;
+  padding: 16px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--field-border);
+  background: var(--white);
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.input:focus {
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.field label {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  transition: all 0.12s ease;
+  pointer-events: none;
+  color: var(--muted);
+  font-size: 14px;
+  background: transparent;
+  padding: 0 6px;
+}
+.input:focus + label,
+.input:not(:placeholder-shown) + label,
+.field.has-value label {
+  top: -8px;
+  transform: none;
+  font-size: 12px;
+  color: var(--brand);
+  background: var(--white);
+  padding: 0 6px;
+}
+
+.input[disabled],
+.input[readonly] {
+  opacity: 0.8;
+  background: #fafafa;
+}
+
+.field.password {
+  position: relative;
+}
+.field.password .input {
+  padding-right: 54px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 38px;
+  width: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--field-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  cursor: pointer;
+  color: #666;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+.password-toggle:focus {
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+.password-toggle:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: #333;
+}
+
+.password-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.btn {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--brand), var(--brand-2));
+  color: var(--white);
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-block;
+  text-align: center;
+  transition:
+    transform 0.06s ease,
+    box-shadow 0.12s ease,
+    opacity 0.12s ease;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.text-link {
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 600;
+}
+.forgot-link {
+  color: #d33;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.card .helper-row {
+  text-align: center;
+  margin-top: 12px;
+}
+
+.form-msg {
+  margin-top: 8px;
+  color: #b33;
+  font-size: 14px;
+}
+
+.input:focus,
+.btn:focus,
+.password-toggle:focus {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (max-width: 1000px) {
+  .left-illustration {
+    flex: 0 0 40%;
+    padding: 28px;
+  }
+  .illustration-text h1 {
+    font-size: 36px;
+  }
+  .card {
+    width: 380px;
+    padding: 28px;
+  }
+}
+
+@media (max-width: 820px) {
+  .auth-outer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .left-illustration {
+    flex: none;
+    width: 100%;
+    min-height: 260px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .illustration-wrapper img {
+    max-width: 360px;
+  }
+  .right-panel {
+    padding: 18px;
+  }
+  .card {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 20px;
+    border-radius: 12px;
+  }
+  .illustration-text {
+    top: 6%;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    font-size: 15px;
+  }
+  .illustration-text h1 {
+    font-size: 28px;
+  }
+  .illustration-text p {
+    font-size: 15px;
+  }
+  .card {
+    padding: 18px;
+    margin: 16px;
+    border-radius: 12px;
+  }
+  .input {
+    padding: 14px;
+    font-size: 15px;
+  }
+  .btn {
+    padding: 14px;
+    font-size: 15px;
+    border-radius: 10px;
+  }
+  .password-toggle {
+    right: 6px;
+    height: 38px;
+    width: 38px;
+  }
+}
+
+@media (min-width: 900px) {
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 40px rgba(12, 30, 80, 0.08);
+  }
+}

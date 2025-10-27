@@ -1,0 +1,13 @@
+# templates/pdb-backend.yaml - CORRECTED
+{{- if .Values.backend.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.backend.name }}-pdb
+  namespace: {{ .Values.namespace }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.backend.name }}
+{{- end }}

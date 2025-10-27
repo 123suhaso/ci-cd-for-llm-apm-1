@@ -1,0 +1,183 @@
+# Global
+namespace: llm-apm
+imagePullSecrets:
+  - name: dockerhub-secret
+
+# Backend
+backend:
+  enabled: true
+  name: backend
+  # replicas removed — HPA will control replica count
+  image:
+    repository: "1234suhas/llm-apm-backend"
+    tag: "latest"
+    pullPolicy: Always
+  containerPort: 8000
+  envSecretName: llm-apm-secret
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+  readinessProbe:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+  livenessProbe:
+    path: /healthz
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 3
+
+  # HPA config for backend (horizontal scaling)
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    cpuUtilization: 60
+
+  # VPA config for backend (vertical recommendations)
+  vpa:
+    enabled: true
+    updateMode: "Off"   # Off => Recommendation-only (safe). Change to "Auto" only after testing.
+    minAllowed:
+      cpu: "50m"
+      memory: "64Mi"
+    maxAllowed:
+      cpu: "2000m"
+      memory: "4Gi"
+
+# Frontend
+frontend:
+  enabled: true
+  name: frontend
+  # replicas removed — HPA will control replica count if enabled
+  image:
+    repository: "1234suhas/llm-apm-frontend"
+    tag: "latest"
+    pullPolicy: Always
+  containerPort: 80
+  envSecretName: frontend-env-secret
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "250m"
+      memory: "256Mi"
+  commandEnabled: true
+
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 3
+
+  # HPA config for frontend
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    cpuUtilization: 50
+
+# Redis (keep static / manual tuning)
+redis:
+  enabled: true
+  name: redis
+  image: redis:7-alpine
+  replicas: 1
+  containerPort: 6379
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+# Service types
+service:
+  backend:
+    type: ClusterIP
+    port: 8000
+  frontend:
+    type: LoadBalancer
+    port: 80
+  redis:
+    type: ClusterIP
+    port: 6379
+
+# Ingress
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: llm-apm.duckdns.org
+  tlsSecretName: llm-apm-tls
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+# Cert-manager ClusterIssuer settings (used by template)
+clusterIssuer:
+  email: suhaso2002@gmail.com
+  name: letsencrypt-prod-1
+  server: https://acme-v02.api.letsencrypt.org/directory
+
+secretsProvider:
+  enabled: true
+  name: azure-keyvault-secrets
+  keyVaultName: kv-scopebot
+  tenantId: "25ddf5d2-6e0b-4a34-82fc-bfc91415e7a6"
+  usePodIdentity: "false"
+  useVMManagedIdentity: "true"
+  objects:
+    - AZURE-OPENAI-API-KEY
+    - AZURE-OPENAI-ENDPOINT
+    - AZURE-OPENAI-API-VERSION
+    - AZURE-OPENAI-DEPLOYMENT
+    - LLM-APM-SECRET-KEY
+    - DATABASE-URL
+    - REDIS-URL
+    - VITE-API-BASE-URL
+    - VITE-GRAFANA-URL
+  secretObjects:
+    - secretName: llm-apm-secret
+      type: Opaque
+      data:
+        - objectName: AZURE-OPENAI-API-KEY
+          key: AZURE_OPENAI_API_KEY
+        - objectName: AZURE-OPENAI-ENDPOINT
+          key: AZURE_OPENAI_ENDPOINT
+        - objectName: AZURE-OPENAI-API-VERSION
+          key: AZURE_OPENAI_API_VERSION
+        - objectName: AZURE-OPENAI-DEPLOYMENT
+          key: AZURE_OPENAI_DEPLOYMENT
+        - objectName: LLM-APM-SECRET-KEY
+          key: LLM_APM_SECRET_KEY
+        - objectName: DATABASE-URL
+          key: DATABASE_URL
+        - objectName: REDIS-URL
+          key: REDIS_URL
+    - secretName: frontend-env-secret
+      type: Opaque
+      data:
+        - objectName: VITE-API-BASE-URL
+          key: VITE_API_BASE_URL
+        - objectName: VITE-GRAFANA-URL
+          key: VITE_GRAFANA_URL
+
+# Resources for helm 
+podAnnotations: {}
+podLabels: {}
+
+# RBAC settings
+rbac:
+  create: true

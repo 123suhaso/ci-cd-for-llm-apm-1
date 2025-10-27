@@ -1,0 +1,80 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtualenv
+.venv/
+venv/
+env/
+ENV/
+*.env
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+llm_apm.env
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and runtime
+*.log
+logs/
+*.pid
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Distribution zips
+*.zip
+
+# Docker
+docker-compose.override.yml
+**/docker-compose.override.yml
+*.envrc
+
+# Secrets & config
+.env
+.env.* 
+secrets/
+private_key.pem
+*.pem
+*.key
+
+# Redis / db dumps
+dump.rdb
+*.sqlite3
+*.db
+
+# Node (if any)
+node_modules/
+
+# Test outputs
+.coverage
+htmlcov/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# macOS
+.DS_Store
+
+# Misc
+tmp/
+temp/
+.env
+dist/
+node_modules/
+actions-runner/
+actions-runner/_*.tar.gz
+actions-runner/
+run-logs-18840992301/
+kubernets/
+.env

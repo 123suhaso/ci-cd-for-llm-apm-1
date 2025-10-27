@@ -1,0 +1,96 @@
+{{- if .Values.rbac.create }}
+
+#######################################
+# BACKEND RBAC (ServiceAccount + Role)
+#######################################
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: {{ .Values.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-role
+  namespace: {{ .Values.namespace }}
+rules:
+  # Allow reading only its own secret
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["llm-apm-secret"]
+    verbs: ["get"]
+
+  # Allow reading configmaps
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+
+  # Allow reading services for discovery
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-rolebinding
+  namespace: {{ .Values.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backend-role
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: {{ .Values.namespace }}
+
+########################################
+# FRONTEND RBAC (ServiceAccount + Role)
+########################################
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend-sa
+  namespace: {{ .Values.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: frontend-role
+  namespace: {{ .Values.namespace }}
+rules:
+  # Allow reading its frontend secret
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["frontend-env-secret"]
+    verbs: ["get"]
+
+  # Allow reading configmaps
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+
+  # Allow reading services
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: frontend-rolebinding
+  namespace: {{ .Values.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: frontend-role
+subjects:
+  - kind: ServiceAccount
+    name: frontend-sa
+    namespace: {{ .Values.namespace }}
+
+{{- end }}

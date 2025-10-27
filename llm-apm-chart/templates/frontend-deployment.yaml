@@ -1,0 +1,92 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.frontend.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{ include "llm-apm.labels" . | nindent 4 }}
+spec:
+  # replicas removed so HPA can control scaling
+  selector:
+    matchLabels:
+      app: {{ .Values.frontend.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.frontend.name }}
+    spec:
+      serviceAccountName: frontend-sa
+      automountServiceAccountToken: false
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      volumes:
+      - name: secrets-store-inline
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "{{ .Values.secretsProvider.name }}"
+      containers:
+      - name: {{ .Values.frontend.name }}
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.frontend.containerPort }}
+        envFrom:
+        - secretRef:
+            name: {{ .Values.frontend.envSecretName }}
+        volumeMounts:
+        - name: secrets-store-inline
+          mountPath: /mnt/secrets-store
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.frontend.containerPort }}
+          initialDelaySeconds: {{ .Values.frontend.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.frontend.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.frontend.readinessProbe.timeoutSeconds }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.frontend.containerPort }}
+          initialDelaySeconds: {{ .Values.frontend.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.frontend.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.frontend.livenessProbe.timeoutSeconds }}
+        resources:
+{{ toYaml .Values.frontend.resources | indent 10 }}
+        {{- if .Values.frontend.commandEnabled }}
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo ">>> generating /usr/share/nginx/html/env-config.js from pod env..."
+          printf '%s\n' "window.__env = {" \
+          " VITE_API_BASE_URL: \"${VITE_API_BASE_URL:-}\"," \
+          " VITE_GRAFANA_URL: \"${VITE_GRAFANA_URL:-}\"" \
+          "};" > /usr/share/nginx/html/env-config.js || true
+          if [ -f /usr/share/nginx/html/index.html ]; then
+            if ! grep -q '/env-config.js' /usr/share/nginx/html/index.html 2>/dev/null; then
+              echo ">>> injecting /env-config.js loader"
+              awk 'BEGIN{inserted=0} /<script[^>]*type=\"module\"[^>]*>/ && !inserted { print \" <script src=\\\"/env-config.js\\\"></script>\"; inserted=1 } { print } END { if(!inserted) print \" <script src=\\\"/env-config.js\\\"></script>\" }' /usr/share/nginx/html/index.html > /tmp/index.html.new && mv /tmp/index.html.new /usr/share/nginx/html/index.html || true
+            fi
+          fi
+          echo ">>> starting nginx"
+          exec nginx -g 'daemon off;'
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: {{ .Values.namespace }}
+spec:
+  type: {{ .Values.service.frontend.type }}
+  selector:
+    app: {{ .Values.frontend.name }}
+  ports:
+  - protocol: TCP
+    port: {{ .Values.service.frontend.port }}
+    targetPort: {{ .Values.frontend.containerPort }}
+{{- end }}

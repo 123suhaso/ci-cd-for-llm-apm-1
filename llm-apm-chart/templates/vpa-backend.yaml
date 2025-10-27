@@ -1,0 +1,25 @@
+{{- if and .Values.backend.enabled .Values.backend.vpa.enabled }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ .Values.backend.name }}-vpa
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "llm-apm.fullname" . }}
+spec:
+  targetRef:
+    apiVersion: "apps/v1"
+    kind: Deployment
+    name: {{ .Values.backend.name }}
+  updatePolicy:
+    updateMode: "{{ .Values.backend.vpa.updateMode | default "Off" }}"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: "*"
+        minAllowed:
+          cpu: "{{ .Values.backend.vpa.minAllowed.cpu | default "50m" }}"
+          memory: "{{ .Values.backend.vpa.minAllowed.memory | default "64Mi" }}"
+        maxAllowed:
+          cpu: "{{ .Values.backend.vpa.maxAllowed.cpu | default "2000m" }}"
+          memory: "{{ .Values.backend.vpa.maxAllowed.memory | default "4Gi" }}"
+{{- end }}

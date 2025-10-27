@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+  namespace: llm-apm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      imagePullSecrets:
+        - name: dockerhub-secret
+
+      # mount the CSI SecretProviderClass as a volume
+      volumes:
+        - name: secrets-store-inline
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: "azure-keyvault-secrets"
+
+      containers:
+        - name: backend
+          # use variable when you update images in CI, but keep placeholder here for local apply
+          image: 1234suhas/llm-apm-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+
+          # IMPORTANT: we still pull environment variables from the Kubernetes Secret
+          # that the CSI driver will create (llm-apm-secret). Keep envFrom as before.
+          envFrom:
+            - secretRef:
+                name: llm-apm-secret
+
+          # mount path is optional (we don't need files), but mounting the CSI volume triggers the secret sync
+          volumeMounts:
+            - name: secrets-store-inline
+              mountPath: /mnt/secrets-store
+              readOnly: true
+
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: llm-apm
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
