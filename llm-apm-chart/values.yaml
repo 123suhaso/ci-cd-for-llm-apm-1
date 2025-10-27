@@ -3,7 +3,7 @@ namespace: llm-apm
 imagePullSecrets:
   - name: dockerhub-secret
 
-# Backend
+
 backend:
   enabled: true
   name: backend
