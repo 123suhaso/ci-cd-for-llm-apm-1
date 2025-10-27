@@ -142,7 +142,7 @@ secretsProvider:
     - AZURE-OPENAI-API-VERSION
     - AZURE-OPENAI-DEPLOYMENT
     - LLM-APM-SECRET-KEY
-    - DATABASE-URL-1
+    - DATABASE-URL-DB
     - REDIS-URL
     - VITE-API-BASE-URL
     - VITE-GRAFANA-URL
@@ -160,8 +160,8 @@ secretsProvider:
           key: AZURE_OPENAI_DEPLOYMENT
         - objectName: LLM-APM-SECRET-KEY
           key: LLM_APM_SECRET_KEY
-        - objectName: DATABASE-URL-1
-          key: DATABASE_URL_1
+        - objectName: DATABASE-URL-DB
+          key: DATABASE_URL_DB
         - objectName: REDIS-URL
           key: REDIS_URL
     - secretName: frontend-env-secret
