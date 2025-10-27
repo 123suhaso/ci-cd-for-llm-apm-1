@@ -12,7 +12,6 @@ from pydantic import Field
 
 load_dotenv()
 
-
 class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: Optional[str] = Field(None, env="AZURE_OPENAI_API_KEY")
     AZURE_OPENAI_ENDPOINT: Optional[str] = Field(None, env="AZURE_OPENAI_ENDPOINT")
