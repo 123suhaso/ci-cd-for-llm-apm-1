@@ -38,7 +38,6 @@ backend:
     maxReplicas: 5
     cpuUtilization: 60
 
-  # VPA config for backend (vertical recommendations)
   vpa:
     enabled: true
     updateMode: "Off"   # Off => Recommendation-only (safe). Change to "Auto" only after testing.
