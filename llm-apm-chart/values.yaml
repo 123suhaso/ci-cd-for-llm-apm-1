@@ -7,7 +7,6 @@ imagePullSecrets:
 backend:
   enabled: true
   name: backend
-  # replicas removed — HPA will control replica count
   image:
     repository: "1234suhas/llm-apm-backend"
     tag: "latest"
