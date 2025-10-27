@@ -24,7 +24,7 @@ env:
 jobs:
   code-quality-frontend:
     name: Frontend — Syntax & Build Check
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
@@ -49,7 +49,7 @@ jobs:
 
   code-quality-backend:
     name: Backend — Python Syntax Check
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
@@ -67,7 +67,7 @@ jobs:
 
   gitleaks-pr-scan:
     name: Gitleaks PR scan (safe)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request_target'
     steps:
       - name: Checkout PR head (safe for pull_request_target)
@@ -92,7 +92,7 @@ jobs:
 
   security-checks:
     name: Security Checks (Bandit, Safety, ESLint, Gitleaks)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: [code-quality-frontend, code-quality-backend]
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +146,7 @@ jobs:
 
   backend-tests:
     name: Backend — Run pytest (with coverage, coverage gating disabled)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: [code-quality-backend]
     defaults:
       run:
@@ -225,7 +225,7 @@ jobs:
 
   build:
     name: Build & Push Docker Images
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: [security-checks, backend-tests]
     strategy:
       matrix:
@@ -271,10 +271,11 @@ jobs:
       - name: Save buildx cache (optional)
         run: |
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+          
 
   container-scan:
     name: Container Image Security Scan (Trivy)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: build
     strategy:
       matrix:
@@ -302,7 +303,7 @@ jobs:
     #   github.event.action == 'closed' &&
     #   github.event.pull_request.merged == true &&
     #   (github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'main')
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: container-scan
 
     steps:
