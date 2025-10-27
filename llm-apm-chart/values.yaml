@@ -161,7 +161,7 @@ secretsProvider:
         - objectName: LLM-APM-SECRET-KEY
           key: LLM_APM_SECRET_KEY
         - objectName: DATABASE-URL-DB
-          key: DATABASE_URL_DB
+          key: DATABASE_URL
         - objectName: REDIS-URL
           key: REDIS_URL
     - secretName: frontend-env-secret
