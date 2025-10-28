@@ -18,11 +18,7 @@ env:
   IMAGE_TAG: ${{ github.sha }}
   KEYVAULT_NAME: kv-scopebot
   DEPLOYMENT_TIMEOUT: 600s
-  HEALTH_CHECK_RETRIES: 10
-  SMOKE_TEST_RETRIES: 5
   SERVICE_WAIT_TIMEOUT: 300
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/llm-apm
 
 jobs:
   code-quality-frontend:
@@ -243,7 +239,7 @@ jobs:
     strategy:
       matrix:
         service: [backend, frontend]
-        
+
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v2
@@ -320,19 +316,6 @@ jobs:
           kubectl create namespace llm-apm --dry-run=client -o yaml | kubectl apply -f -
           kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Create GHCR pull secret
-        run: |
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=ghcr.io \
-            --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GITHUB_TOKEN }} \
-            --docker-email=${{ secrets.ADMIN_EMAIL }} \
-            -n llm-apm --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Patch default service account
-        run: |
-          kubectl -n llm-apm patch serviceaccount default \
-            --type='merge' -p '{"imagePullSecrets":[{"name":"ghcr-secret"}]}' || true
 
       # ============================================================
       # CAPTURE CURRENT STATE BEFORE DEPLOYMENT
@@ -340,22 +323,22 @@ jobs:
       - name: Capture current deployment state
         id: capture-state
         run: |
-          echo "📸 Capturing current deployment state..."
+          echo "apturing current deployment state..."
           
           if helm list -n llm-apm | grep -q llm-apm; then
             CURRENT_REVISION=$(helm list -n llm-apm -o json | jq -r '.[] | select(.name=="llm-apm") | .revision')
             echo "current_revision=$CURRENT_REVISION" >> $GITHUB_OUTPUT
             echo "deployment_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Found existing deployment at revision $CURRENT_REVISION"
+            echo "Found existing deployment at revision $CURRENT_REVISION"
             
             helm get values llm-apm -n llm-apm > current-values.yaml || true
             kubectl get pods -n llm-apm -o wide > current-pods.txt || true
             
-            echo "📊 Current Helm History:"
+            echo "Current Helm History:"
             helm history llm-apm -n llm-apm
           else
             echo "deployment_exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️  No existing deployment found. This is a fresh install."
+            echo "No existing deployment found. This is a fresh install."
           fi
 
       # ============================================================
@@ -371,7 +354,6 @@ jobs:
           helm upgrade --install llm-apm ./llm-apm-chart \
             --namespace llm-apm \
             --create-namespace \
-            --set imageRegistry=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} \
             --set imageTag=${{ env.IMAGE_TAG }} \
             --set backend.vpa.enabled=false \
             --set secretsProvider.tenantId=${{ steps.get-azure-info.outputs.tenantId }} \
@@ -384,12 +366,12 @@ jobs:
           HELM_EXIT_CODE=${PIPESTATUS[0]}
           
           if [ $HELM_EXIT_CODE -ne 0 ]; then
-            echo "❌ Helm deployment failed with exit code $HELM_EXIT_CODE"
+            echo "Helm deployment failed with exit code $HELM_EXIT_CODE"
             echo "deployment_status=failed" >> $GITHUB_OUTPUT
             cat helm-deploy.log
             exit 1
           else
-            echo "✅ Helm deployment succeeded"
+            echo "Helm deployment succeeded"
             echo "deployment_status=success" >> $GITHUB_OUTPUT
           fi
 
@@ -400,7 +382,7 @@ jobs:
         id: verify-services
         if: steps.helm-deploy.outputs.deployment_status == 'success'
         run: |
-          echo "🔍 Verifying that services are created..."
+          echo "Verifying that services are created..."
           
           SERVICE_CHECK_FAILED=false
           MAX_WAIT=${{ env.SERVICE_WAIT_TIMEOUT }}
@@ -413,23 +395,23 @@ jobs:
             elapsed=0
             while [ $elapsed -lt $MAX_WAIT ]; do
               if kubectl get svc "$service" -n llm-apm >/dev/null 2>&1; then
-                echo "✅ Service $service exists"
+                echo "Service $service exists"
                 EP=$(kubectl get endpoints "$service" -n llm-apm -o jsonpath='{.subsets[*].addresses[*].ip}' 2>/dev/null || echo "")
                 if [ -n "$EP" ]; then
-                  echo "✅ Service $service has endpoints: $EP"
+                  echo "Service $service has endpoints: $EP"
                   break
                 else
-                  echo "⏳ Service $service exists but has no endpoints yet ($elapsed/${MAX_WAIT}s)"
+                  echo "Service $service exists but has no endpoints yet ($elapsed/${MAX_WAIT}s)"
                 fi
               else
-                echo "⏳ Service $service not found yet ($elapsed/${MAX_WAIT}s)"
+                echo "Service $service not found yet ($elapsed/${MAX_WAIT}s)"
               fi
               sleep $INTERVAL
               elapsed=$((elapsed + INTERVAL))
             done
 
             if ! kubectl get svc "$service" -n llm-apm >/dev/null 2>&1; then
-              echo "❌ Service $service was not created after ${MAX_WAIT}s"
+              echo "Service $service was not created after ${MAX_WAIT}s"
               SERVICE_CHECK_FAILED=true
             fi
           done
@@ -440,7 +422,7 @@ jobs:
             kubectl get pods -n llm-apm -o wide || true
             exit 1
           else
-            echo "✅ All required services are created"
+            echo "All required services are created"
             echo "service_status=success" >> $GITHUB_OUTPUT
           fi
 
@@ -451,7 +433,7 @@ jobs:
         id: wait-rollouts
         if: steps.verify-services.outputs.service_status == 'success'
         run: |
-          echo "⏳ Waiting for rollouts to complete..."
+          echo "Waiting for rollouts to complete..."
           
           set +e
           
@@ -465,11 +447,11 @@ jobs:
           REDIS_STATUS=$?
           
           if [ $BACKEND_STATUS -ne 0 ] || [ $FRONTEND_STATUS -ne 0 ] || [ $REDIS_STATUS -ne 0 ]; then
-            echo "❌ Rollout failed!"
+            echo " Rollout failed!"
             echo "rollout_status=failed" >> $GITHUB_OUTPUT
             exit 1
           else
-            echo "✅ All rollouts completed successfully"
+            echo "All rollouts completed successfully"
             echo "rollout_status=success" >> $GITHUB_OUTPUT
           fi
 
@@ -480,26 +462,26 @@ jobs:
         id: health-checks
         if: steps.wait-rollouts.outputs.rollout_status == 'success'
         run: |
-          echo "🏥 Performing health checks..."
+          echo "Performing health checks..."
           
           HEALTH_CHECK_FAILED=false
           
           kubectl get pods -n llm-apm
           
           if ! kubectl wait --for=condition=ready pod -l app=backend -n llm-apm --timeout=300s; then
-            echo "❌ Backend pods not ready"
+            echo "Backend pods not ready"
             HEALTH_CHECK_FAILED=true
           fi
           
           if ! kubectl wait --for=condition=ready pod -l app=frontend -n llm-apm --timeout=300s; then
-            echo "❌ Frontend pods not ready"
+            echo "Frontend pods not ready"
             HEALTH_CHECK_FAILED=true
           fi
           
           UNHEALTHY_PODS=$(kubectl get pods -n llm-apm --field-selector=status.phase!=Running,status.phase!=Succeeded -o json | jq -r '.items | length')
           
           if [ "$UNHEALTHY_PODS" -gt 0 ]; then
-            echo "❌ Found $UNHEALTHY_PODS unhealthy pods"
+            echo "Found $UNHEALTHY_PODS unhealthy pods"
             kubectl get pods -n llm-apm --field-selector=status.phase!=Running,status.phase!=Succeeded
             HEALTH_CHECK_FAILED=true
           fi
@@ -508,7 +490,7 @@ jobs:
           echo "Total container restarts: $RESTART_COUNT"
           
           if [ "$RESTART_COUNT" -gt 5 ]; then
-            echo "⚠️  High restart count: $RESTART_COUNT"
+            echo " High restart count: $RESTART_COUNT"
             HEALTH_CHECK_FAILED=true
           fi
           
@@ -516,7 +498,7 @@ jobs:
             echo "health_status=failed" >> $GITHUB_OUTPUT
             exit 1
           else
-            echo "✅ All health checks passed"
+            echo "All health checks passed"
             echo "health_status=success" >> $GITHUB_OUTPUT
           fi
 
@@ -533,7 +515,7 @@ jobs:
            steps.health-checks.outcome == 'failure' || 
            steps.smoke-tests.outcome == 'failure')
         run: |
-          echo "🔄 AUTOMATIC ROLLBACK INITIATED"
+          echo "AUTOMATIC ROLLBACK INITIATED"
           echo "================================"
           
           if [ "${{ steps.helm-deploy.outcome }}" = "failure" ]; then
@@ -553,18 +535,18 @@ jobs:
           
           helm rollback llm-apm ${{ steps.capture-state.outputs.current_revision }} -n llm-apm --wait --timeout=5m
           
-          echo "⏳ Waiting for rollback..."
+          echo "Waiting for rollback..."
           kubectl rollout status deployment/backend -n llm-apm --timeout=300s || true
           kubectl rollout status deployment/frontend -n llm-apm --timeout=300s || true
           kubectl rollout status deployment/redis -n llm-apm --timeout=300s || true
           
           sleep 15
           
-          echo "✅ Rollback completed"
+          echo "Rollback completed"
           kubectl get pods -n llm-apm -o wide
           helm history llm-apm -n llm-apm
           
-          echo "❌ DEPLOYMENT FAILED - Rolled back to previous version"
+          echo "DEPLOYMENT FAILED - Rolled back to previous version"
           exit 1
 
       # ============================================================
@@ -588,7 +570,7 @@ jobs:
           for i in {1..60}; do
             IP=$(kubectl get svc -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             if [ -n "$IP" ]; then
-              echo "✅ NGINX Ingress IP: $IP"
+              echo "NGINX Ingress IP: $IP"
               echo "NGINX_INGRESS_IP=$IP" >> $GITHUB_ENV
               break
             fi
@@ -607,7 +589,6 @@ jobs:
           
           cat > deployment-artifacts/deployment-info.txt <<EOF
           IMAGE_TAG=${{ env.IMAGE_TAG }}
-          REGISTRY=${{ env.REGISTRY }}
           GIT_SHA=${{ github.sha }}
           GIT_REF=${{ github.ref }}
           DEPLOYMENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

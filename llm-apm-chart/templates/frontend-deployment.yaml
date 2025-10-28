@@ -7,7 +7,6 @@ metadata:
   labels:
     {{ include "llm-apm.labels" . | nindent 4 }}
 spec:
-  # replicas removed so HPA can control scaling
   selector:
     matchLabels:
       app: {{ .Values.frontend.name }}
