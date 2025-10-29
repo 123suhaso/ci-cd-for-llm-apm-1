@@ -8,7 +8,6 @@ spec:
     server: {{ .Values.clusterIssuer.server }}
     privateKeySecretRef:
       name: {{ .Values.clusterIssuer.name }}-key
-    # Skip TLS verification for CAA records (helps with DuckDNS issues)
     skipTLSVerify: false
     solvers:
       - http01:

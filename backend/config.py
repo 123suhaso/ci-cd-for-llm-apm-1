@@ -8,7 +8,7 @@ try:
 except Exception:
     from pydantic import BaseSettings
 
-from pydantic import Field
+from pydantic import Field                                                                        
 
 load_dotenv()
 
@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     AZURE_OPENAI_ENDPOINT: Optional[str] = Field(None, env="AZURE_OPENAI_ENDPOINT")
     AZURE_OPENAI_API_VERSION: str = Field(
         "2024-12-01-preview", env="AZURE_OPENAI_API_VERSION"
-    )
-    AZURE_OPENAI_DEPLOYMENT: Optional[str] = Field(None, env="AZURE_OPENAI_DEPLOYMENT")
+    )                        
+    AZURE_OPENAI_DEPLOYMENT: Optional[str] = Field(None, env="AZURE_OPENAI_DEPLOYM,ENT")
 
     MAX_PROMPT_TOKENS: int = Field(2000, env="MAX_PROMPT_TOKENS")
     MAX_TOKENS_LIMIT: int = Field(128000, env="MAX_TOKENS_LIMIT")
